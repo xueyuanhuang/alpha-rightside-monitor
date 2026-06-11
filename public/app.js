@@ -3,8 +3,8 @@ const state = {
     q: "",
     level: "active",
     chain: "all",
-    minQuoteVol60: 10000,
-    minTrades60: 150,
+    minQuoteVol60: 0,
+    minTrades60: 0,
     hideChasing: true,
     sort: "score"
   },

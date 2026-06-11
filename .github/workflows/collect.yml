@@ -11,10 +11,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        offset: [0, 100, 200, 300]
+        offset: [0, 50, 100, 150, 200, 250, 300, 350]
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Refresh batch
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl --fail --show-error --silent \
-            "https://alpha-rightside-monitor.pages.dev/api/refresh?key=${{ secrets.CRON_SECRET }}&offset=${{ matrix.offset }}&limit=100" \
+          npm run refresh:live -- --offset "${{ matrix.offset }}" --limit 50 --kline-limit 96 \
             | jq '{ok, checkedAt, offset, limit, activeTotal, processed, metricsWritten, errors: (.errors | length)}'

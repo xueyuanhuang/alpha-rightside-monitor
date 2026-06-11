@@ -10,6 +10,8 @@
   },
   "scripts": {
     "build": "node scripts/build-check.mjs",
+    "bootstrap:snapshot": "node scripts/bootstrap-snapshot.mjs",
+    "refresh:live": "node scripts/refresh-live.mjs",
     "dev": "wrangler pages dev public --compatibility-date=2026-06-11",
     "deploy": "wrangler pages deploy public --project-name=alpha-rightside-monitor"
   },

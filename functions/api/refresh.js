@@ -1,5 +1,6 @@
 const BINANCE_BASE = "https://www.binance.com";
 const FIVE_MINUTES = 5 * 60 * 1000;
+const DEFAULT_FETCH_TIMEOUT_MS = 9_000;
 
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
@@ -28,8 +29,18 @@ export async function onRequestGet(context) {
   );
   const bootstrap = url.searchParams.get("bootstrap") === "1";
   const alphaFilter = url.searchParams.get("alphaId");
-  const klineLimitBootstrap = Number.parseInt(env.KLINE_LIMIT_BOOTSTRAP || "320", 10);
-  const klineLimitIncremental = Number.parseInt(env.KLINE_LIMIT_INCREMENTAL || "24", 10);
+  const klineLimitOverride = Number.parseInt(url.searchParams.get("klineLimit") || "", 10);
+  const klineLimitBootstrap = clamp(
+    Number.isFinite(klineLimitOverride) ? klineLimitOverride : Number.parseInt(env.KLINE_LIMIT_BOOTSTRAP || "96", 10),
+    80,
+    330
+  );
+  const klineLimitIncremental = clamp(
+    Number.isFinite(klineLimitOverride) ? klineLimitOverride : Number.parseInt(env.KLINE_LIMIT_INCREMENTAL || "24", 10),
+    12,
+    120
+  );
+  const fetchTimeoutMs = clamp(Number.parseInt(env.BINANCE_FETCH_TIMEOUT_MS || "9000", 10), 3000, 20000);
 
   const tokenPayload = await fetchJson(`${BINANCE_BASE}/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list`);
   if (!tokenPayload?.success || !Array.isArray(tokenPayload.data)) {
@@ -62,7 +73,12 @@ export async function onRequestGet(context) {
   for (const token of selected) {
     try {
       const lastOpenTime = bootstrap ? null : await getLastOpenTime(env, token.alphaId);
-      const klineRows = await fetchKlines(token.alphaId, lastOpenTime, lastOpenTime ? klineLimitIncremental : klineLimitBootstrap);
+      const klineRows = await fetchKlines(
+        token.alphaId,
+        lastOpenTime,
+        lastOpenTime ? klineLimitIncremental : klineLimitBootstrap,
+        fetchTimeoutMs
+      );
       if (klineRows.length) {
         await upsertKlines(env, token.alphaId, klineRows);
       }
@@ -100,6 +116,8 @@ export async function onRequestGet(context) {
     checkedAt: started.toISOString(),
     offset,
     limit,
+    klineLimitBootstrap,
+    klineLimitIncremental,
     activeTotal: activeTokens.length,
     processed: selected.length,
     metricsWritten,
@@ -109,21 +127,38 @@ export async function onRequestGet(context) {
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "accept": "application/json,text/plain,*/*",
-      "user-agent": "Mozilla/5.0 AlphaRightsideMonitor/0.1",
-      ...(options.headers || {})
+  const { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, retries = 2, ...fetchOptions } = options;
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        ...fetchOptions,
+        signal: controller.signal,
+        headers: {
+          "accept": "application/json,text/plain,*/*",
+          "user-agent": "Mozilla/5.0 AlphaRightsideMonitor/0.1",
+          ...(fetchOptions.headers || {})
+        }
+      });
+      if (!response.ok) {
+        throw new Error(`fetch_failed ${response.status} ${url}`);
+      }
+      return response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries) break;
+      await wait(350 * (attempt + 1));
+    } finally {
+      clearTimeout(timeout);
     }
-  });
-  if (!response.ok) {
-    throw new Error(`fetch_failed ${response.status} ${url}`);
   }
-  return response.json();
+  const detail = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`fetch_failed ${detail} ${url}`);
 }
 
-async function fetchKlines(alphaId, lastOpenTime, limit) {
+async function fetchKlines(alphaId, lastOpenTime, limit, fetchTimeoutMs) {
   const params = new URLSearchParams({
     symbol: `${alphaId}USDT`,
     interval: "5m",
@@ -132,7 +167,9 @@ async function fetchKlines(alphaId, lastOpenTime, limit) {
   if (lastOpenTime) {
     params.set("startTime", String(Number(lastOpenTime) + FIVE_MINUTES));
   }
-  const payload = await fetchJson(`${BINANCE_BASE}/bapi/defi/v1/public/alpha-trade/klines?${params.toString()}`);
+  const payload = await fetchJson(`${BINANCE_BASE}/bapi/defi/v1/public/alpha-trade/klines?${params.toString()}`, {
+    timeoutMs: fetchTimeoutMs
+  });
   if (!payload?.success || !Array.isArray(payload.data)) {
     return [];
   }
@@ -169,7 +206,8 @@ async function supabaseFetch(env, table, query = "", options = {}) {
   if (response.status === 204) {
     return null;
   }
-  return response.json();
+  const body = await response.text();
+  return body ? JSON.parse(body) : null;
 }
 
 async function upsertTokens(env, tokens) {
@@ -452,6 +490,15 @@ function pct(current, previous) {
 function safeRatio(value, baseline) {
   if (!Number.isFinite(value) || !Number.isFinite(baseline) || baseline === 0) return null;
   return value / baseline;
+}
+
+function clamp(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function toNumber(value) {
