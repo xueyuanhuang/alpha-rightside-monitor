@@ -1,8 +1,8 @@
-const CACHE_NAME = "alpha-rightside-monitor-v6";
+const CACHE_NAME = "alpha-rightside-monitor-v7";
 const APP_SHELL = [
   "/",
   "/index.html",
-  "/styles.css",
+  "/styles.css?v=20260612-5",
   "/app.js?v=20260612-4",
   "/manifest.webmanifest",
   "/assets/icon.svg"
