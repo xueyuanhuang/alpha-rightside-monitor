@@ -23,5 +23,5 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          npm run refresh:live -- --offset "${{ matrix.offset }}" --limit 50 --kline-limit 96 \
+          node scripts/refresh-live.mjs --offset "${{ matrix.offset }}" --limit 50 --kline-limit 96 \
             | jq '{ok, checkedAt, offset, limit, activeTotal, processed, metricsWritten, errors: (.errors | length)}'
