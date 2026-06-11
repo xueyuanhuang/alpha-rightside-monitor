@@ -173,10 +173,15 @@ function renderToken(token) {
   const reasons = node.querySelector(".reason-row");
 
   icon.onerror = () => {
-    icon.onerror = null;
-    icon.src = "/assets/icon.svg";
+    if (token.iconUrl && icon.dataset.fallback !== "remote") {
+      icon.dataset.fallback = "remote";
+      icon.src = remoteIconSource(token.iconUrl);
+    } else {
+      icon.onerror = null;
+      icon.src = "/assets/icon.svg";
+    }
   };
-  icon.src = iconSource(token.iconUrl);
+  icon.src = iconSource(token);
   symbol.textContent = token.symbol || "-";
   name.textContent = token.name || "";
   pill.textContent = levelLabels[token.signalLevel] || token.signalLevel || "无";
@@ -214,7 +219,26 @@ function setField(node, field, value) {
   if (target) target.textContent = value;
 }
 
-function iconSource(url) {
+function iconSource(token) {
+  const local = localIconSource(token);
+  if (local) return local;
+  return remoteIconSource(token?.iconUrl);
+}
+
+function localIconSource(token) {
+  if (!token?.alphaId || !token?.iconUrl) return "";
+  try {
+    const path = new URL(token.iconUrl).pathname;
+    let extension = path.split(".").pop()?.toLowerCase() || "png";
+    if (!["png", "jpg", "jpeg", "svg", "webp"].includes(extension)) extension = "png";
+    if (extension === "jpeg") extension = "jpg";
+    return `/token-icons/${encodeURIComponent(token.alphaId)}.${extension}`;
+  } catch {
+    return "";
+  }
+}
+
+function remoteIconSource(url) {
   if (!url) return "/assets/icon.svg";
   return `/api/icon?url=${encodeURIComponent(url)}`;
 }
