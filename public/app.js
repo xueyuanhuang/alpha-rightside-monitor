@@ -172,6 +172,11 @@ function renderToken(token) {
   const copy = node.querySelector(".copy-btn");
   const reasons = node.querySelector(".reason-row");
 
+  icon.referrerPolicy = "no-referrer";
+  icon.onerror = () => {
+    icon.onerror = null;
+    icon.src = "/assets/icon.svg";
+  };
   icon.src = token.iconUrl || "/assets/icon.svg";
   symbol.textContent = token.symbol || "-";
   name.textContent = token.name || "";
