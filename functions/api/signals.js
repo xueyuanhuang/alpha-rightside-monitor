@@ -25,7 +25,21 @@ export async function onRequestGet(context) {
     });
   }
 
-  const rows = await supabaseFetch(env, env.SUPABASE_TABLE_CURRENT || "alpha_metrics_current");
+  let rows = [];
+  try {
+    rows = await supabaseFetch(env, env.SUPABASE_TABLE_CURRENT || "alpha_metrics_current");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const tableMissing = message.includes("PGRST205") || message.includes("Could not find the table");
+    return json({
+      ok: false,
+      configured: true,
+      error: tableMissing ? "table_missing" : "supabase_read_failed",
+      detail: message.slice(0, 240),
+      data: [],
+      summary: emptySummary()
+    }, tableMissing ? 200 : 500);
+  }
   const filters = {
     q: (url.searchParams.get("q") || "").trim().toLowerCase(),
     level: url.searchParams.get("level") || "all",

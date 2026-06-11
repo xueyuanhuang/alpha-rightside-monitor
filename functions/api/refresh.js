@@ -44,7 +44,19 @@ export async function onRequestGet(context) {
     ? activeTokens.filter((token) => token.alphaId === alphaFilter)
     : activeTokens.slice(offset, offset + limit);
 
-  await upsertTokens(env, selected);
+  try {
+    await upsertTokens(env, selected);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json({
+      ok: false,
+      error: message.includes("PGRST205") || message.includes("Could not find the table")
+        ? "table_missing"
+        : "token_upsert_failed",
+      detail: message.slice(0, 260),
+      hint: "Run supabase/schema.sql in Supabase SQL Editor before refreshing data."
+    }, 200);
+  }
 
   const results = [];
   for (const token of selected) {
