@@ -1,0 +1,13 @@
+name = "alpha-rightside-monitor"
+compatibility_date = "2026-06-11"
+pages_build_output_dir = "public"
+
+[vars]
+SUPABASE_TABLE_TOKENS = "alpha_tokens"
+SUPABASE_TABLE_KLINES = "alpha_klines_5m"
+SUPABASE_TABLE_CURRENT = "alpha_metrics_current"
+SUPABASE_TABLE_SNAPSHOTS = "alpha_signal_snapshots"
+REFRESH_BATCH_LIMIT = "100"
+KLINE_LIMIT_BOOTSTRAP = "320"
+KLINE_LIMIT_INCREMENTAL = "24"
+SIGNAL_CACHE_SECONDS = "20"

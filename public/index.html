@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e1714" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Alpha Signals" />
+    <title>Alpha 右侧信号</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/assets/icon.svg" />
+    <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Binance Alpha</p>
+          <h1>右侧信号</h1>
+        </div>
+        <button class="icon-btn" id="refreshButton" type="button" aria-label="刷新">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.2 6.5M3 12A9 9 0 0 1 18.2 5.5"/><path d="M21 4v6h-6M3 20v-6h6"/></svg>
+        </button>
+      </header>
+
+      <section class="metrics-strip" aria-label="信号概览">
+        <div class="metric strong">
+          <span>强</span>
+          <strong id="strongCount">0</strong>
+        </div>
+        <div class="metric entry">
+          <span>准入</span>
+          <strong id="entryCount">0</strong>
+        </div>
+        <div class="metric watch">
+          <span>观察</span>
+          <strong id="watchCount">0</strong>
+        </div>
+        <div class="metric">
+          <span>活跃</span>
+          <strong id="activeCount">0</strong>
+        </div>
+      </section>
+
+      <section class="filter-band">
+        <label class="search-box">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg>
+          <input id="searchInput" autocomplete="off" placeholder="搜索 symbol / 名称 / 合约" />
+        </label>
+
+        <div class="segments" id="levelSegments" aria-label="信号等级">
+          <button class="segment is-active" data-level="active" type="button">信号</button>
+          <button class="segment" data-level="strong" type="button">强</button>
+          <button class="segment" data-level="entry" type="button">准入</button>
+          <button class="segment" data-level="watch" type="button">观察</button>
+          <button class="segment" data-level="all" type="button">全部</button>
+        </div>
+
+        <div class="filter-grid">
+          <label>
+            <span>链</span>
+            <select id="chainSelect">
+              <option value="all">全部</option>
+            </select>
+          </label>
+          <label>
+            <span>排序</span>
+            <select id="sortSelect">
+              <option value="score">分数</option>
+              <option value="level">等级</option>
+              <option value="vol60">60m量</option>
+              <option value="ret30">30m涨幅</option>
+              <option value="quote">成交额</option>
+            </select>
+          </label>
+          <label>
+            <span>60m成交额</span>
+            <input id="minQuoteInput" inputmode="numeric" type="number" min="0" step="1000" value="10000" />
+          </label>
+          <label>
+            <span>60m交易数</span>
+            <input id="minTradesInput" inputmode="numeric" type="number" min="0" step="10" value="150" />
+          </label>
+        </div>
+
+        <label class="toggle-row">
+          <input id="hideChasingInput" type="checkbox" checked />
+          <span>排除追高</span>
+        </label>
+      </section>
+
+      <section class="status-row">
+        <span id="statusText">加载中</span>
+        <span id="updatedText"></span>
+      </section>
+
+      <section class="token-list" id="tokenList" aria-live="polite"></section>
+      <section class="empty-state" id="emptyState" hidden>
+        <strong>没有匹配信号</strong>
+        <span>调整过滤条件或等待下一次刷新</span>
+      </section>
+    </main>
+
+    <template id="tokenTemplate">
+      <article class="token-row">
+        <div class="token-main">
+          <img class="token-icon" alt="" loading="lazy" />
+          <div class="token-title">
+            <div>
+              <strong class="token-symbol"></strong>
+              <span class="signal-pill"></span>
+            </div>
+            <span class="token-name"></span>
+          </div>
+          <div class="token-price">
+            <strong></strong>
+            <span></span>
+          </div>
+        </div>
+
+        <div class="contract-line">
+          <span class="chain-chip"></span>
+          <code></code>
+          <button class="copy-btn" type="button" aria-label="复制合约地址">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+          </button>
+        </div>
+
+        <div class="metric-grid">
+          <div><span>30m</span><strong data-field="ret30"></strong></div>
+          <div><span>60m</span><strong data-field="ret60"></strong></div>
+          <div><span>60m量</span><strong data-field="vol60"></strong></div>
+          <div><span>15m量</span><strong data-field="vol15"></strong></div>
+          <div><span>15m笔数</span><strong data-field="trades15"></strong></div>
+          <div><span>60m额</span><strong data-field="quote60"></strong></div>
+          <div><span>60m笔数</span><strong data-field="trades60"></strong></div>
+          <div><span>市值</span><strong data-field="mcap"></strong></div>
+        </div>
+
+        <div class="reason-row"></div>
+      </article>
+    </template>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

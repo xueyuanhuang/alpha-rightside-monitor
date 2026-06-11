@@ -1,0 +1,19 @@
+{
+  "name": "Alpha 右侧信号",
+  "short_name": "Alpha Signals",
+  "description": "Binance Alpha right-side trading signal monitor.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1714",
+  "theme_color": "#0e1714",
+  "icons": [
+    {
+      "src": "/assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

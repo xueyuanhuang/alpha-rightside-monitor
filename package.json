@@ -1,0 +1,19 @@
+{
+  "name": "alpha-rightside-monitor",
+  "version": "0.1.0",
+  "private": false,
+  "description": "A mobile-first PWA for Binance Alpha right-side trading signals.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build-check.mjs",
+    "dev": "wrangler pages dev public --compatibility-date=2026-06-11",
+    "deploy": "wrangler pages deploy public --project-name=alpha-rightside-monitor"
+  },
+  "devDependencies": {
+    "wrangler": "^4.99.0"
+  }
+}
