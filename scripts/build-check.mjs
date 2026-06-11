@@ -7,6 +7,7 @@ const required = [
   "public/manifest.webmanifest",
   "public/service-worker.js",
   "functions/api/signals.js",
+  "functions/api/icon.js",
   "functions/api/refresh.js",
   "supabase/schema.sql"
 ];

@@ -172,12 +172,11 @@ function renderToken(token) {
   const copy = node.querySelector(".copy-btn");
   const reasons = node.querySelector(".reason-row");
 
-  icon.referrerPolicy = "no-referrer";
   icon.onerror = () => {
     icon.onerror = null;
     icon.src = "/assets/icon.svg";
   };
-  icon.src = token.iconUrl || "/assets/icon.svg";
+  icon.src = iconSource(token.iconUrl);
   symbol.textContent = token.symbol || "-";
   name.textContent = token.name || "";
   pill.textContent = levelLabels[token.signalLevel] || token.signalLevel || "无";
@@ -213,6 +212,11 @@ function renderToken(token) {
 function setField(node, field, value) {
   const target = node.querySelector(`[data-field="${field}"]`);
   if (target) target.textContent = value;
+}
+
+function iconSource(url) {
+  if (!url) return "/assets/icon.svg";
+  return `/api/icon?url=${encodeURIComponent(url)}`;
 }
 
 async function copyContract(address) {
