@@ -1,0 +1,12 @@
+name = "alpha-rightside-scheduler"
+main = "scheduler/worker.js"
+compatibility_date = "2026-06-11"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+GITHUB_OWNER = "xueyuanhuang"
+GITHUB_REPO = "alpha-rightside-monitor"
+GITHUB_WORKFLOW = "collect.yml"
+GITHUB_REF = "main"

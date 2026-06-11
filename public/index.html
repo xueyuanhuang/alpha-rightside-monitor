@@ -44,6 +44,11 @@
         </div>
       </section>
 
+      <section class="freshness-banner" id="freshnessBanner" hidden>
+        <strong>数据已过期</strong>
+        <span id="freshnessText">后台超过 10 分钟没有刷新，当前信号不可作为交易依据。</span>
+      </section>
+
       <section class="filter-band">
         <label class="search-box">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="7"/></svg>
@@ -98,8 +103,8 @@
 
       <section class="token-list" id="tokenList" aria-live="polite"></section>
       <section class="empty-state" id="emptyState" hidden>
-        <strong>没有匹配信号</strong>
-        <span>调整过滤条件或等待下一次刷新</span>
+        <strong id="emptyTitle">没有匹配信号</strong>
+        <span id="emptyDetail">调整过滤条件或等待下一次刷新</span>
       </section>
     </main>
 
@@ -113,6 +118,7 @@
               <span class="signal-pill"></span>
             </div>
             <span class="token-name"></span>
+            <span class="token-stamp"></span>
           </div>
           <div class="token-price">
             <strong></strong>
@@ -144,6 +150,6 @@
     </template>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=20260612-3" type="module"></script>
+    <script src="/app.js?v=20260612-4" type="module"></script>
   </body>
 </html>

@@ -14,6 +14,7 @@ const levelRank = {
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
+  const staleAfterSeconds = Number(env.STALE_AFTER_SECONDS || 600);
 
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     return json({
@@ -50,14 +51,12 @@ export async function onRequestGet(context) {
     sort: url.searchParams.get("sort") || "score"
   };
 
-  const data = rows
-    .map(normalizeMetric)
+  const all = rows.map(normalizeMetric);
+  const summary = summarize(all, staleAfterSeconds);
+  const data = summary.isStale ? [] : all
     .filter((row) => applyFilters(row, filters))
     .sort((a, b) => compareRows(a, b, filters.sort))
     .slice(0, 600);
-
-  const all = rows.map(normalizeMetric);
-  const summary = summarize(all);
 
   return json({
     ok: true,
@@ -146,13 +145,16 @@ function compareRows(a, b, sort) {
   return (b.signalScore || 0) - (a.signalScore || 0);
 }
 
-function summarize(rows) {
+function summarize(rows, staleAfterSeconds = 600) {
   const chains = [...new Set(rows.map((row) => row.chainName).filter(Boolean))].sort();
   const latest = rows
     .map((row) => row.computedAt)
     .filter(Boolean)
     .sort()
     .at(-1) || null;
+  const latestMs = latest ? new Date(latest).getTime() : NaN;
+  const ageSeconds = Number.isFinite(latestMs) ? Math.max(0, Math.round((Date.now() - latestMs) / 1000)) : null;
+  const isStale = ageSeconds === null || ageSeconds > staleAfterSeconds;
   return {
     total: rows.length,
     strong: rows.filter((row) => row.signalLevel === "strong").length,
@@ -161,7 +163,10 @@ function summarize(rows) {
     chase: rows.filter((row) => row.signalLevel === "chase").length,
     activeSignals: rows.filter((row) => ["strong", "entry", "watch"].includes(row.signalLevel)).length,
     chains,
-    latestComputedAt: latest
+    latestComputedAt: latest,
+    ageSeconds,
+    staleAfterSeconds,
+    isStale
   };
 }
 
@@ -174,7 +179,10 @@ function emptySummary() {
     chase: 0,
     activeSignals: 0,
     chains: [],
-    latestComputedAt: null
+    latestComputedAt: null,
+    ageSeconds: null,
+    staleAfterSeconds: 600,
+    isStale: true
   };
 }
 

@@ -9,6 +9,8 @@ const required = [
   "functions/api/signals.js",
   "functions/api/icon.js",
   "functions/api/refresh.js",
+  "scheduler/worker.js",
+  "wrangler.scheduler.toml",
   "supabase/schema.sql"
 ];
 

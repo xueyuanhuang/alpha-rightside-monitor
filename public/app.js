@@ -24,6 +24,10 @@ const elements = {
   tokenList: document.querySelector("#tokenList"),
   tokenTemplate: document.querySelector("#tokenTemplate"),
   emptyState: document.querySelector("#emptyState"),
+  emptyTitle: document.querySelector("#emptyTitle"),
+  emptyDetail: document.querySelector("#emptyDetail"),
+  freshnessBanner: document.querySelector("#freshnessBanner"),
+  freshnessText: document.querySelector("#freshnessText"),
   toast: document.querySelector("#toast"),
   statusText: document.querySelector("#statusText"),
   updatedText: document.querySelector("#updatedText"),
@@ -113,9 +117,10 @@ async function loadSignals() {
       throw new Error(payload.error || "load_failed");
     }
     renderSummary(payload.summary);
+    renderFreshness(payload.summary);
     updateChains(payload.summary.chains || []);
     renderTokens(payload.data || []);
-    elements.statusText.textContent = `${payload.data.length} 个结果`;
+    elements.statusText.textContent = payload.summary.isStale ? "数据已过期" : `${payload.data.length} 个结果`;
     elements.updatedText.textContent = payload.summary.latestComputedAt
       ? relativeTime(payload.summary.latestComputedAt)
       : "";
@@ -132,6 +137,19 @@ function renderSummary(summary) {
   elements.entryCount.textContent = summary.entry || 0;
   elements.watchCount.textContent = summary.watch || 0;
   elements.activeCount.textContent = summary.total || 0;
+}
+
+function renderFreshness(summary) {
+  const stale = Boolean(summary?.isStale);
+  elements.freshnessBanner.hidden = !stale;
+  if (stale) {
+    const staleAfterMinutes = Math.round((summary.staleAfterSeconds || 600) / 60);
+    const lastSeen = summary.latestComputedAt ? `${relativeTime(summary.latestComputedAt)}（${absoluteTime(summary.latestComputedAt)}）` : "暂无成功刷新";
+    elements.freshnessText.textContent = `后台超过 ${staleAfterMinutes} 分钟没有刷新。最近一批数据：${lastSeen}，当前信号不可作为交易依据。`;
+    setEmptyCopy("数据已过期", "等待下一次采集成功后页面会自动恢复");
+  } else {
+    setEmptyCopy("没有匹配信号", "调整过滤条件或等待下一次刷新");
+  }
 }
 
 function updateChains(chains) {
@@ -164,6 +182,7 @@ function renderToken(token) {
   const icon = node.querySelector(".token-icon");
   const symbol = node.querySelector(".token-symbol");
   const name = node.querySelector(".token-name");
+  const stamp = node.querySelector(".token-stamp");
   const pill = node.querySelector(".signal-pill");
   const price = node.querySelector(".token-price strong");
   const change = node.querySelector(".token-price span");
@@ -184,6 +203,7 @@ function renderToken(token) {
   icon.src = iconSource(token);
   symbol.textContent = token.symbol || "-";
   name.textContent = token.name || "";
+  stamp.textContent = token.computedAt ? `计算 ${relativeTime(token.computedAt)}` : "";
   pill.textContent = levelLabels[token.signalLevel] || token.signalLevel || "无";
   pill.classList.add(token.signalLevel || "none");
   price.textContent = formatPrice(token.price);
@@ -262,6 +282,11 @@ function showToast(message) {
   }, 1800);
 }
 
+function setEmptyCopy(title, detail) {
+  elements.emptyTitle.textContent = title;
+  elements.emptyDetail.textContent = detail;
+}
+
 function formatPrice(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
@@ -306,6 +331,17 @@ function relativeTime(iso) {
   if (minutes < 60) return `${minutes}m 前`;
   const hours = Math.round(minutes / 60);
   return `${hours}h 前`;
+}
+
+function absoluteTime(iso) {
+  const time = new Date(iso);
+  if (Number.isNaN(time.getTime())) return "";
+  return time.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function debounce(fn, delay) {

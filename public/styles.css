@@ -138,6 +138,28 @@ h1 {
   color: var(--blue);
 }
 
+.freshness-banner {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(247, 200, 67, 0.45);
+  border-radius: 8px;
+  color: #ffe7a1;
+  background: rgba(77, 54, 8, 0.42);
+}
+
+.freshness-banner strong {
+  color: var(--yellow);
+  font-size: 13px;
+}
+
+.freshness-banner span {
+  color: #d9c48f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .filter-band {
   position: sticky;
   top: 0;
@@ -316,6 +338,13 @@ h1 {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.token-stamp {
+  display: block;
+  margin-top: 2px;
+  color: #63776d;
+  font-size: 10px;
 }
 
 .signal-pill,

@@ -13,7 +13,8 @@
     "bootstrap:snapshot": "node scripts/bootstrap-snapshot.mjs",
     "refresh:live": "node scripts/refresh-live.mjs",
     "dev": "wrangler pages dev public --compatibility-date=2026-06-11",
-    "deploy": "wrangler pages deploy public --project-name=alpha-rightside-monitor"
+    "deploy": "wrangler pages deploy public --project-name=alpha-rightside-monitor",
+    "deploy:scheduler": "wrangler deploy --config wrangler.scheduler.toml"
   },
   "devDependencies": {
     "wrangler": "^4.99.0"
