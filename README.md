@@ -18,6 +18,7 @@ The monitor uses the Binance Web3 Wallet token-market source, not the Alpha Trad
 - Alpha universe and contract addresses: Binance Alpha token list
 
 Displayed `60m` amount, trade count, price, liquidity, and market cap prefer the Web3 Wallet dynamic response so they match the Binance Wallet token detail page more closely.
+Each refresh reads up to 330 wallet 5m candles for signal baselines and persists the most recent 120 candles to Supabase to keep writes bounded.
 
 ## Signal Rules
 
