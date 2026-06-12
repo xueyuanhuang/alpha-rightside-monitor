@@ -61,6 +61,7 @@ export async function onRequestGet(context) {
   return json({
     ok: true,
     configured: true,
+    source: "binance_web3_wallet_dynamic_and_dquery_kline",
     checkedAt: new Date().toISOString(),
     filters,
     summary,

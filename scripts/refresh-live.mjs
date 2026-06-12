@@ -16,7 +16,7 @@ const url = new URL("https://local.alpha-rightside-monitor/api/refresh");
 url.searchParams.set("key", cronSecret);
 url.searchParams.set("offset", argValue("--offset") || "0");
 url.searchParams.set("limit", argValue("--limit") || process.env.REFRESH_BATCH_LIMIT || "50");
-url.searchParams.set("klineLimit", argValue("--kline-limit") || process.env.KLINE_LIMIT_BOOTSTRAP || "96");
+url.searchParams.set("klineLimit", argValue("--kline-limit") || process.env.WALLET_KLINE_LIMIT || "330");
 
 if (hasArg("--bootstrap")) {
   url.searchParams.set("bootstrap", "1");
@@ -31,8 +31,7 @@ const env = {
   SUPABASE_TABLE_CURRENT: process.env.SUPABASE_TABLE_CURRENT || "alpha_metrics_current",
   SUPABASE_TABLE_SNAPSHOTS: process.env.SUPABASE_TABLE_SNAPSHOTS || "alpha_signal_snapshots",
   REFRESH_BATCH_LIMIT: process.env.REFRESH_BATCH_LIMIT || "50",
-  KLINE_LIMIT_BOOTSTRAP: process.env.KLINE_LIMIT_BOOTSTRAP || "96",
-  KLINE_LIMIT_INCREMENTAL: process.env.KLINE_LIMIT_INCREMENTAL || "24",
+  WALLET_KLINE_LIMIT: process.env.WALLET_KLINE_LIMIT || "330",
   BINANCE_FETCH_TIMEOUT_MS: process.env.BINANCE_FETCH_TIMEOUT_MS || "12000"
 };
 

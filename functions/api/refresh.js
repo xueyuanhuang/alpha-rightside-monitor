@@ -1,6 +1,15 @@
 const BINANCE_BASE = "https://www.binance.com";
+const WEB3_BASE = "https://web3.binance.com";
+const DQUERY_BASE = "https://dquery.sintral.io";
 const FIVE_MINUTES = 5 * 60 * 1000;
-const DEFAULT_FETCH_TIMEOUT_MS = 9_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 12_000;
+
+const WALLET_KLINE_PLATFORMS = {
+  "1": "ethereum",
+  "56": "bsc",
+  "8453": "base",
+  CT_501: "solana"
+};
 
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
@@ -27,22 +36,18 @@ export async function onRequestGet(context) {
     160,
     Math.max(1, Number.parseInt(url.searchParams.get("limit") || env.REFRESH_BATCH_LIMIT || "100", 10))
   );
-  const bootstrap = url.searchParams.get("bootstrap") === "1";
   const alphaFilter = url.searchParams.get("alphaId");
   const klineLimitOverride = Number.parseInt(url.searchParams.get("klineLimit") || "", 10);
-  const klineLimitBootstrap = clamp(
-    Number.isFinite(klineLimitOverride) ? klineLimitOverride : Number.parseInt(env.KLINE_LIMIT_BOOTSTRAP || "96", 10),
+  const klineLimit = clamp(
+    Number.isFinite(klineLimitOverride) ? klineLimitOverride : Number.parseInt(env.WALLET_KLINE_LIMIT || "330", 10),
     80,
     330
   );
-  const klineLimitIncremental = clamp(
-    Number.isFinite(klineLimitOverride) ? klineLimitOverride : Number.parseInt(env.KLINE_LIMIT_INCREMENTAL || "24", 10),
-    12,
-    120
-  );
-  const fetchTimeoutMs = clamp(Number.parseInt(env.BINANCE_FETCH_TIMEOUT_MS || "9000", 10), 3000, 20000);
+  const fetchTimeoutMs = clamp(Number.parseInt(env.BINANCE_FETCH_TIMEOUT_MS || "12000", 10), 3000, 25000);
 
-  const tokenPayload = await fetchJson(`${BINANCE_BASE}/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list`);
+  const tokenPayload = await fetchJson(`${BINANCE_BASE}/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list`, {
+    timeoutMs: fetchTimeoutMs
+  });
   if (!tokenPayload?.success || !Array.isArray(tokenPayload.data)) {
     return json({ ok: false, error: "token_list_failed", payload: tokenPayload }, 502);
   }
@@ -72,19 +77,28 @@ export async function onRequestGet(context) {
   const results = [];
   for (const token of selected) {
     try {
-      const lastOpenTime = bootstrap ? null : await getLastOpenTime(env, token.alphaId);
-      const klineRows = await fetchKlines(
-        token.alphaId,
-        lastOpenTime,
-        lastOpenTime ? klineLimitIncremental : klineLimitBootstrap,
-        fetchTimeoutMs
-      );
+      let dynamic = null;
+      let dynamicError = "";
+      try {
+        dynamic = await fetchWalletDynamic(token, fetchTimeoutMs);
+      } catch (error) {
+        dynamicError = error instanceof Error ? error.message : String(error);
+      }
+
+      let klineRows = [];
+      let klineError = "";
+      try {
+        klineRows = await fetchWalletKlines(token, dynamic, klineLimit, fetchTimeoutMs);
+      } catch (error) {
+        klineError = error instanceof Error ? error.message : String(error);
+      }
+
       if (klineRows.length) {
         await upsertKlines(env, token.alphaId, klineRows);
       }
 
-      const storedKlines = await getStoredKlines(env, token.alphaId, 330);
-      const metrics = computeMetrics(token, storedKlines);
+      const storedKlines = klineRows;
+      const metrics = computeMetrics(token, storedKlines, dynamic);
       if (metrics) {
         await upsertCurrentMetric(env, metrics);
         if (["watch", "entry", "strong", "chase"].includes(metrics.signal_level)) {
@@ -95,14 +109,20 @@ export async function onRequestGet(context) {
       results.push({
         alphaId: token.alphaId,
         symbol: token.symbol,
+        source: "web3_wallet",
+        platform: WALLET_KLINE_PLATFORMS[token.chainId] || null,
         fetchedKlines: klineRows.length,
         storedKlines: storedKlines.length,
-        signal: metrics?.signal_level || "none"
+        dynamic: Boolean(dynamic),
+        signal: metrics?.signal_level || "none",
+        dynamicError: dynamicError ? dynamicError.slice(0, 180) : undefined,
+        klineError: klineError ? klineError.slice(0, 180) : undefined
       });
     } catch (error) {
       results.push({
         alphaId: token.alphaId,
         symbol: token.symbol,
+        source: "web3_wallet",
         error: error instanceof Error ? error.message : String(error)
       });
     }
@@ -113,11 +133,11 @@ export async function onRequestGet(context) {
 
   return json({
     ok: true,
+    source: "binance_web3_wallet_dynamic_and_dquery_kline",
     checkedAt: started.toISOString(),
     offset,
     limit,
-    klineLimitBootstrap,
-    klineLimitIncremental,
+    klineLimit,
     activeTotal: activeTokens.length,
     processed: selected.length,
     metricsWritten,
@@ -137,8 +157,8 @@ async function fetchJson(url, options = {}) {
         ...fetchOptions,
         signal: controller.signal,
         headers: {
-          "accept": "application/json,text/plain,*/*",
-          "user-agent": "Mozilla/5.0 AlphaRightsideMonitor/0.1",
+          accept: "application/json,text/plain,*/*",
+          "user-agent": "Mozilla/5.0 AlphaRightsideMonitor/0.2",
           ...(fetchOptions.headers || {})
         }
       });
@@ -158,34 +178,114 @@ async function fetchJson(url, options = {}) {
   throw new Error(`fetch_failed ${detail} ${url}`);
 }
 
-async function fetchKlines(alphaId, lastOpenTime, limit, fetchTimeoutMs) {
+async function fetchWalletDynamic(token, fetchTimeoutMs) {
+  if (!token.chainId || !token.contractAddress) return null;
   const params = new URLSearchParams({
-    symbol: `${alphaId}USDT`,
-    interval: "5m",
+    chainId: token.chainId,
+    contractAddress: token.contractAddress
+  });
+  const payload = await fetchJson(`${WEB3_BASE}/bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai?${params.toString()}`, {
+    timeoutMs: fetchTimeoutMs,
+    retries: 1
+  });
+  return payload?.data && typeof payload.data === "object" ? payload.data : null;
+}
+
+async function fetchWalletKlines(token, dynamic, limit, fetchTimeoutMs) {
+  const platform = WALLET_KLINE_PLATFORMS[token.chainId];
+  if (!platform || !token.contractAddress) return [];
+
+  const endTime = floorToInterval(Date.now(), FIVE_MINUTES);
+  const params = new URLSearchParams({
+    platform,
+    address: token.contractAddress,
+    interval: "5min",
+    to: String(Date.now()),
     limit: String(limit)
   });
-  if (lastOpenTime) {
-    params.set("startTime", String(Number(lastOpenTime) + FIVE_MINUTES));
-  }
-  const payload = await fetchJson(`${BINANCE_BASE}/bapi/defi/v1/public/alpha-trade/klines?${params.toString()}`, {
-    timeoutMs: fetchTimeoutMs
+  const payload = await fetchJson(`${DQUERY_BASE}/u-kline/v1/k-line/candles?${params.toString()}`, {
+    timeoutMs: fetchTimeoutMs,
+    retries: 1
   });
-  if (!payload?.success || !Array.isArray(payload.data)) {
-    return [];
+  const status = payload?.status || {};
+  if (String(status.error_code) !== "0" || !Array.isArray(payload.data)) return [];
+
+  const rawRows = payload.data
+    .map(parseWalletKlineRow)
+    .filter(Boolean)
+    .sort((a, b) => a.open_time - b.open_time);
+
+  return densifyWalletKlines(rawRows, limit, endTime, firstNumber(dynamic?.price, dynamic?.aggPrice, token.price));
+}
+
+function parseWalletKlineRow(row) {
+  if (!Array.isArray(row) || row.length < 7) return null;
+  const openTime = Number(row[5]);
+  const open = toNumberOrNull(row[0]);
+  const high = toNumberOrNull(row[1]);
+  const low = toNumberOrNull(row[2]);
+  const close = toNumberOrNull(row[3]);
+  if (![openTime, open, high, low, close].every(Number.isFinite)) return null;
+  return {
+    open_time: floorToInterval(openTime, FIVE_MINUTES),
+    open,
+    high,
+    low,
+    close,
+    base_volume: 0,
+    quote_volume: toNumber(row[4]),
+    trade_count: Math.round(toNumber(row[6])),
+    taker_buy_base_volume: 0,
+    taker_buy_quote_volume: 0
+  };
+}
+
+function densifyWalletKlines(rawRows, limit, endTime, fallbackPrice) {
+  if (!rawRows.length && !Number.isFinite(fallbackPrice)) return [];
+
+  const startTime = endTime - (limit - 1) * FIVE_MINUTES;
+  const rowsByTime = new Map();
+  let previousClose = Number.isFinite(fallbackPrice) ? fallbackPrice : null;
+  for (const row of rawRows) {
+    if (row.open_time < startTime && Number.isFinite(row.close)) {
+      previousClose = row.close;
+      continue;
+    }
+    rowsByTime.set(row.open_time, row);
   }
-  return payload.data.map((row) => ({
-    open_time: Number(row[0]),
-    open_time_at: new Date(Number(row[0])).toISOString(),
-    open: toNumber(row[1]),
-    high: toNumber(row[2]),
-    low: toNumber(row[3]),
-    close: toNumber(row[4]),
-    base_volume: toNumber(row[5]),
-    quote_volume: toNumber(row[7]),
-    trade_count: Number(row[8] || 0),
-    taker_buy_base_volume: toNumber(row[9]),
-    taker_buy_quote_volume: toNumber(row[10])
-  }));
+
+  if (!Number.isFinite(previousClose) && rawRows[0]?.close) {
+    previousClose = rawRows[0].close;
+  }
+
+  const dense = [];
+  for (let openTime = startTime; openTime <= endTime; openTime += FIVE_MINUTES) {
+    const raw = rowsByTime.get(openTime);
+    if (raw) {
+      previousClose = raw.close;
+      dense.push({
+        ...raw,
+        open_time: openTime,
+        open_time_at: new Date(openTime).toISOString()
+      });
+      continue;
+    }
+    if (!Number.isFinite(previousClose)) continue;
+    dense.push({
+      open_time: openTime,
+      open_time_at: new Date(openTime).toISOString(),
+      open: previousClose,
+      high: previousClose,
+      low: previousClose,
+      close: previousClose,
+      base_volume: 0,
+      quote_volume: 0,
+      trade_count: 0,
+      taker_buy_base_volume: 0,
+      taker_buy_quote_volume: 0
+    });
+  }
+  return dense;
 }
 
 async function supabaseFetch(env, table, query = "", options = {}) {
@@ -193,8 +293,8 @@ async function supabaseFetch(env, table, query = "", options = {}) {
   const response = await fetch(url, {
     ...options,
     headers: {
-      "apikey": env.SUPABASE_SERVICE_ROLE_KEY,
-      "authorization": `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
       "content-type": "application/json",
       ...(options.headers || {})
     }
@@ -239,20 +339,10 @@ async function upsertTokens(env, tokens) {
     "?on_conflict=alpha_id",
     {
       method: "POST",
-      headers: { "prefer": "resolution=merge-duplicates" },
+      headers: { prefer: "resolution=merge-duplicates" },
       body: JSON.stringify(rows)
     }
   );
-}
-
-async function getLastOpenTime(env, alphaId) {
-  const table = env.SUPABASE_TABLE_KLINES || "alpha_klines_5m";
-  const rows = await supabaseFetch(
-    env,
-    table,
-    `?select=open_time&alpha_id=eq.${encodeURIComponent(alphaId)}&order=open_time.desc&limit=1`
-  );
-  return rows?.[0]?.open_time || null;
 }
 
 async function upsertKlines(env, alphaId, rows) {
@@ -261,7 +351,7 @@ async function upsertKlines(env, alphaId, rows) {
   for (let index = 0; index < payload.length; index += 120) {
     await supabaseFetch(env, table, "?on_conflict=alpha_id,open_time", {
       method: "POST",
-      headers: { "prefer": "resolution=merge-duplicates" },
+      headers: { prefer: "resolution=merge-duplicates" },
       body: JSON.stringify(payload.slice(index, index + 120))
     });
   }
@@ -289,7 +379,7 @@ async function getStoredKlines(env, alphaId, limit) {
 async function upsertCurrentMetric(env, metrics) {
   await supabaseFetch(env, env.SUPABASE_TABLE_CURRENT || "alpha_metrics_current", "?on_conflict=alpha_id", {
     method: "POST",
-    headers: { "prefer": "resolution=merge-duplicates" },
+    headers: { prefer: "resolution=merge-duplicates" },
     body: JSON.stringify([{ ...metrics, updated_at: new Date().toISOString() }])
   });
 }
@@ -322,54 +412,82 @@ async function insertSignalSnapshot(env, metrics) {
   });
 }
 
-function computeMetrics(token, rows) {
-  if (!rows || rows.length < 80) {
-    return null;
-  }
-  const last = rows.at(-1);
+function computeMetrics(token, rows, dynamic) {
+  const dyn = dynamic || {};
+  const last = rows?.at(-1) || null;
   const now = new Date();
-  const close = last.close;
-  const ret15 = pct(close, rows.at(-4)?.close);
-  const ret30 = pct(close, rows.at(-7)?.close);
-  const ret60 = pct(close, rows.at(-13)?.close);
-  const quoteVol15 = sum(rows.slice(-3), "quote_volume");
-  const quoteVol60 = sum(rows.slice(-12), "quote_volume");
-  const trades15 = sum(rows.slice(-3), "trade_count");
-  const trades60 = sum(rows.slice(-12), "trade_count");
+  const close = firstNumber(dyn.price, dyn.aggPrice, last?.close, token.price);
+  if (!Number.isFinite(close)) return null;
 
-  const vol15Baseline = median(rollingSums(rows, "quote_volume", 3, 288, 1));
-  const vol60Baseline = median(rollingSums(rows, "quote_volume", 12, 288, 1));
-  const trades15Baseline = median(rollingSums(rows, "trade_count", 3, 288, 1));
-  const range60 = rangePct(rows.slice(-12));
-  const range60Baseline = median(rollingRanges(rows, 12, 288, 1));
-  const volatility60 = volatilityPct(rows.slice(-13));
+  const ret15 = rows?.length >= 4 ? pct(close, rows.at(-4)?.close) : null;
+  const ret30 = rows?.length >= 7 ? pct(close, rows.at(-7)?.close) : null;
+  const ret60FromKline = rows?.length >= 13 ? pct(close, rows.at(-13)?.close) : null;
+  const ret60 = firstNumber(dyn.percentChange1h, ret60FromKline);
+  const quoteVol5 = firstNumber(dyn.volume5m, rows?.length ? sum(rows.slice(-1), "quote_volume") : null);
+  const quoteVol15 = rows?.length >= 3 ? sum(rows.slice(-3), "quote_volume") : null;
+  const quoteVol60FromKline = rows?.length >= 12 ? sum(rows.slice(-12), "quote_volume") : null;
+  const quoteVol60 = firstNumber(dyn.volume1h, quoteVol60FromKline);
+  const trades15 = rows?.length >= 3 ? sum(rows.slice(-3), "trade_count") : null;
+  const trades60FromKline = rows?.length >= 12 ? sum(rows.slice(-12), "trade_count") : null;
+  const trades60 = firstNumber(dyn.count1h, trades60FromKline);
 
+  const hasBaseline = rows?.length >= 80;
+  const vol5Baseline = hasBaseline ? median(rollingSums(rows, "quote_volume", 1, 288, 1)) : null;
+  const vol15Baseline = hasBaseline ? median(rollingSums(rows, "quote_volume", 3, 288, 1)) : null;
+  const vol60Baseline = hasBaseline ? median(rollingSums(rows, "quote_volume", 12, 288, 1)) : null;
+  const trades15Baseline = hasBaseline ? median(rollingSums(rows, "trade_count", 3, 288, 1)) : null;
+  const range60 = rows?.length >= 12 ? rangePct(rows.slice(-12)) : null;
+  const range60Baseline = hasBaseline ? median(rollingRanges(rows, 12, 288, 1)) : null;
+  const volatility60 = rows?.length >= 13 ? volatilityPct(rows.slice(-13)) : null;
+
+  const vol5Ratio = safeRatio(quoteVol5, vol5Baseline);
   const vol15Ratio = safeRatio(quoteVol15, vol15Baseline);
   const vol60Ratio = safeRatio(quoteVol60, vol60Baseline);
   const trades15Ratio = safeRatio(trades15, trades15Baseline);
   const range60Ratio = safeRatio(range60, range60Baseline);
 
-  const isChasing = (ret60 ?? 0) >= 10 || (ret15 ?? 0) >= 8;
-  const quality = quoteVol60 >= 10000 && trades60 >= 150;
+  const isChasing = (ret60 ?? 0) >= 8 || (ret15 ?? 0) >= 8;
+  const walletQuality = (quoteVol60 ?? 0) >= 1000 && (trades60 ?? 0) >= 10;
+  const mainEntry =
+    (vol60Ratio ?? 0) >= 5 &&
+    (ret30 ?? 0) >= 2 &&
+    walletQuality &&
+    (ret60 ?? 0) < 8;
+  const shortBurst =
+    (vol5Ratio ?? 0) >= 10 &&
+    (quoteVol5 ?? 0) >= 500 &&
+    (ret15 ?? 0) >= 0.5 &&
+    (ret60 ?? 0) < 8;
+  const fifteenMinuteAcceleration =
+    (vol15Ratio ?? 0) >= 5 &&
+    (trades15 ?? 0) >= 5 &&
+    (ret15 ?? 0) >= 1 &&
+    (ret60 ?? 0) < 8;
+
   const reasons = [];
-  if ((vol60Ratio ?? 0) >= 15) reasons.push("60m成交额>=15x");
-  else if ((vol60Ratio ?? 0) >= 10) reasons.push("60m成交额>=10x");
-  else if ((vol60Ratio ?? 0) >= 8) reasons.push("60m成交额>=8x");
-  if ((ret30 ?? 0) >= 2) reasons.push("30m转强>=2%");
+  if ((vol60Ratio ?? 0) >= 15) reasons.push("60m放量>=15x");
+  else if ((vol60Ratio ?? 0) >= 8) reasons.push("60m放量>=8x");
+  else if ((vol60Ratio ?? 0) >= 5) reasons.push("60m放量>=5x");
+  if ((ret30 ?? 0) >= 3) reasons.push("30m转强>=3%");
+  else if ((ret30 ?? 0) >= 2) reasons.push("30m转强>=2%");
   else if ((ret30 ?? 0) >= 1) reasons.push("30m转强>=1%");
-  if ((vol15Ratio ?? 0) >= 5) reasons.push("15m成交加速>=5x");
-  if ((trades15Ratio ?? 0) >= 3) reasons.push("15m交易数>=3x");
-  if (quality) reasons.push("成交质量达标");
+  if ((ret15 ?? 0) >= 3) reasons.push("15m转强>=3%");
+  if ((vol15Ratio ?? 0) >= 5) reasons.push("15m放量>=5x");
+  if ((vol5Ratio ?? 0) >= 10) reasons.push("5m放量>=10x");
+  if ((quoteVol60 ?? 0) >= 1000) reasons.push("60m额>=1000");
+  if ((trades60 ?? 0) >= 10) reasons.push("60m笔数>=10");
+  if ((trades15 ?? 0) >= 5) reasons.push("15m交易>=5笔");
   if (isChasing) reasons.push("追高风险");
+  if (!WALLET_KLINE_PLATFORMS[token.chainId]) reasons.push("仅钱包动态");
 
   let signalLevel = "none";
-  if (isChasing && ((vol60Ratio ?? 0) >= 8 || (ret15 ?? 0) >= 5)) {
+  if (isChasing && ((ret15 ?? 0) >= 5 || (ret30 ?? 0) >= 5 || (vol60Ratio ?? 0) >= 5)) {
     signalLevel = "chase";
-  } else if ((vol60Ratio ?? 0) >= 15 && (ret30 ?? 0) >= 2 && (ret60 ?? 0) < 8 && quality) {
+  } else if (mainEntry && ((ret30 ?? 0) >= 3 || (ret15 ?? 0) >= 3 || (vol60Ratio ?? 0) >= 8)) {
     signalLevel = "strong";
-  } else if ((vol60Ratio ?? 0) >= 10 && (ret30 ?? 0) >= 2 && (ret60 ?? 0) < 8 && quality) {
+  } else if (mainEntry) {
     signalLevel = "entry";
-  } else if ((vol60Ratio ?? 0) >= 8 && (ret30 ?? 0) >= 1 && (ret60 ?? 0) < 8) {
+  } else if (((vol60Ratio ?? 0) >= 5 && (ret30 ?? 0) >= 1 && (ret60 ?? 0) < 8) || shortBurst || fifteenMinuteAcceleration) {
     signalLevel = "watch";
   }
 
@@ -380,7 +498,7 @@ function computeMetrics(token, rows) {
     ret60,
     vol15Ratio,
     vol60Ratio,
-    trades15Ratio,
+    trades15,
     quoteVol60,
     trades60,
     range60Ratio,
@@ -390,19 +508,19 @@ function computeMetrics(token, rows) {
   return {
     alpha_id: token.alphaId,
     computed_at: now.toISOString(),
-    kline_open_time: last.open_time,
+    kline_open_time: last?.open_time || null,
     symbol: token.symbol,
     name: token.name || null,
     chain_id: token.chainId || null,
     chain_name: token.chainName || null,
     contract_address: token.contractAddress || null,
     icon_url: token.iconUrl || null,
-    price: toNumberOrNull(last.close),
-    percent_change_24h: toNumberOrNull(token.percentChange24h),
-    market_cap: toNumberOrNull(token.marketCap),
-    fdv: toNumberOrNull(token.fdv),
-    liquidity: toNumberOrNull(token.liquidity),
-    holders: token.holders ? Number(token.holders) : null,
+    price: round(close, 12),
+    percent_change_24h: round(firstNumber(dyn.percentChange24h, token.percentChange24h), 6),
+    market_cap: round(firstNumber(dyn.marketCap, token.marketCap), 2),
+    fdv: round(firstNumber(dyn.fdv, token.fdv), 2),
+    liquidity: round(firstNumber(dyn.liquidity, token.liquidity), 2),
+    holders: Math.round(firstNumber(dyn.holders, token.holders) ?? 0) || null,
     ret_15m: round(ret15),
     ret_30m: round(ret30),
     ret_60m: round(ret60),
@@ -410,7 +528,7 @@ function computeMetrics(token, rows) {
     vol60_ratio: round(vol60Ratio),
     trades15_ratio: round(trades15Ratio),
     quote_vol_60m: round(quoteVol60, 2),
-    trades_60m: Math.round(trades60),
+    trades_60m: Math.round(trades60 ?? 0),
     range60_ratio: round(range60Ratio),
     volatility_60m: round(volatility60),
     signal_level: signalLevel,
@@ -421,13 +539,13 @@ function computeMetrics(token, rows) {
 }
 
 function scoreSignal(values) {
-  const levelBase = { strong: 80, entry: 65, watch: 45, chase: 20, none: 0 }[values.signalLevel] || 0;
-  const volume = Math.min(20, (values.vol60Ratio || 0) * 1.1);
-  const momentum = Math.min(15, Math.max(0, values.ret30 || 0) * 2.5);
-  const shortAccel = Math.min(10, (values.vol15Ratio || 0) * 0.8 + (values.trades15Ratio || 0));
-  const quality = Math.min(10, Math.log10(Math.max(1, values.quoteVol60 || 0)) + Math.log10(Math.max(1, values.trades60 || 0)));
-  const range = Math.min(8, (values.range60Ratio || 0) * 2);
-  const chasePenalty = values.isChasing ? 25 : 0;
+  const levelBase = { strong: 78, entry: 62, watch: 42, chase: 18, none: 0 }[values.signalLevel] || 0;
+  const volume = Math.min(18, (values.vol60Ratio || 0) * 2);
+  const momentum = Math.min(18, Math.max(0, values.ret30 || 0) * 3 + Math.max(0, values.ret15 || 0) * 1.2);
+  const shortAccel = Math.min(10, (values.vol15Ratio || 0) * 1.2 + Math.min(5, (values.trades15 || 0) / 2));
+  const quality = Math.min(12, Math.log10(Math.max(1, values.quoteVol60 || 0)) * 1.8 + Math.log10(Math.max(1, values.trades60 || 0)) * 1.8);
+  const range = Math.min(6, (values.range60Ratio || 0) * 1.5);
+  const chasePenalty = values.isChasing ? 24 : 0;
   return Math.max(0, Math.min(100, levelBase + volume + momentum + shortAccel + quality + range - chasePenalty));
 }
 
@@ -497,8 +615,20 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function floorToInterval(value, interval) {
+  return Math.floor(Number(value) / interval) * interval;
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const number = toNumberOrNull(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
 }
 
 function toNumber(value) {

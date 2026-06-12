@@ -4,17 +4,27 @@ Mobile-first PWA for monitoring Binance Alpha right-side trading signals.
 
 ## What It Does
 
-- Stores Binance Alpha token metadata, 5m klines, current computed metrics, and signal snapshots in Supabase.
+- Stores Binance Alpha token metadata, Web3 Wallet-sourced 5m klines, current computed metrics, and signal snapshots in Supabase.
 - Refreshes data in batches with a GitHub Actions Node collector that writes to Supabase.
 - Serves a fast PWA dashboard from Cloudflare Pages.
 - Shows token contract addresses with one-tap copy for trading.
 
+## Data Source
+
+The monitor uses the Binance Web3 Wallet token-market source, not the Alpha Trading pair kline source.
+
+- Current wallet metrics: `web3.binance.com/bapi/defi/v4/public/wallet-direct/buw/wallet/market/token/dynamic/info/ai`
+- Wallet chart klines: `dquery.sintral.io/u-kline/v1/k-line/candles`
+- Alpha universe and contract addresses: Binance Alpha token list
+
+Displayed `60m` amount, trade count, price, liquidity, and market cap prefer the Web3 Wallet dynamic response so they match the Binance Wallet token detail page more closely.
+
 ## Signal Rules
 
-- Watch: `vol60_ratio >= 8`, `ret30 >= 1%`, `ret60 < 8%`
-- Entry: `vol60_ratio >= 10`, `ret30 >= 2%`, `ret60 < 8%`
-- Strong: `vol60_ratio >= 15`, `ret30 >= 2%`, `ret60 < 8%`, `quote_vol_60m >= 10000`, `trades_60m >= 150`
-- Chasing: `ret60 >= 10%` or `ret15 >= 8%`
+- Watch: `vol60_ratio >= 5`, `ret30 >= 1%`, `ret60 < 8%`; or short 5m/15m acceleration.
+- Entry: `vol60_ratio >= 5`, `ret30 >= 2%`, `ret60 < 8%`, `quote_vol_60m >= 1000`, `trades_60m >= 10`.
+- Strong: entry conditions plus `ret30 >= 3%`, `ret15 >= 3%`, or `vol60_ratio >= 8`.
+- Chasing: `ret60 >= 8%` or `ret15 >= 8%`.
 
 ## Supabase
 
@@ -79,19 +89,19 @@ printf "%s" "$CRON_SECRET" | wrangler pages secret put CRON_SECRET --project-nam
 After Supabase secrets are configured, seed data in smaller batches:
 
 ```bash
-curl "https://alpha-rightside-monitor.pages.dev/api/refresh?key=$CRON_SECRET&offset=0&limit=50&bootstrap=1&klineLimit=96"
-curl "https://alpha-rightside-monitor.pages.dev/api/refresh?key=$CRON_SECRET&offset=50&limit=50&bootstrap=1&klineLimit=96"
-curl "https://alpha-rightside-monitor.pages.dev/api/refresh?key=$CRON_SECRET&offset=100&limit=50&bootstrap=1&klineLimit=96"
+curl "https://alpha-rightside-monitor.pages.dev/api/refresh?key=$CRON_SECRET&offset=0&limit=50&klineLimit=330"
+curl "https://alpha-rightside-monitor.pages.dev/api/refresh?key=$CRON_SECRET&offset=50&limit=50&klineLimit=330"
+curl "https://alpha-rightside-monitor.pages.dev/api/refresh?key=$CRON_SECRET&offset=100&limit=50&klineLimit=330"
 ```
 
-If Binance's public Alpha endpoint is slow from Cloudflare, run:
+The old snapshot bootstrap script is only a legacy offline fallback and should not be used for wallet-sourced production metrics.
 
 ```bash
-SUPABASE_URL="https://..." SUPABASE_SERVICE_ROLE_KEY="..." npm run bootstrap:snapshot
+npm run bootstrap:snapshot
 ```
 
 For live collection from a machine or GitHub runner:
 
 ```bash
-npm run refresh:live -- --offset 0 --limit 50 --kline-limit 96
+npm run refresh:live -- --offset 0 --limit 50 --kline-limit 330
 ```

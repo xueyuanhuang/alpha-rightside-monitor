@@ -20,6 +20,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          WALLET_KLINE_LIMIT: "330"
         run: |
-          node scripts/refresh-live.mjs --offset "${{ matrix.offset }}" --limit 50 --kline-limit 96 \
+          node scripts/refresh-live.mjs --offset "${{ matrix.offset }}" --limit 50 --kline-limit 330 \
             | jq '{ok, checkedAt, offset, limit, activeTotal, processed, metricsWritten, errors: (.errors | length)}'
