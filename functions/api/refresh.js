@@ -43,6 +43,7 @@ export async function onRequestGet(context) {
     80,
     330
   );
+  const persistKlineLimit = clamp(Number.parseInt(env.WALLET_KLINE_PERSIST_LIMIT || "120", 10), 24, 330);
   const fetchTimeoutMs = clamp(Number.parseInt(env.BINANCE_FETCH_TIMEOUT_MS || "12000", 10), 3000, 25000);
 
   const tokenPayload = await fetchJson(`${BINANCE_BASE}/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list`, {
@@ -93,8 +94,9 @@ export async function onRequestGet(context) {
         klineError = error instanceof Error ? error.message : String(error);
       }
 
-      if (klineRows.length) {
-        await upsertKlines(env, token.alphaId, klineRows);
+      const persistedKlines = klineRows.slice(-persistKlineLimit);
+      if (persistedKlines.length) {
+        await upsertKlines(env, token.alphaId, persistedKlines);
       }
 
       const storedKlines = klineRows;
@@ -112,6 +114,7 @@ export async function onRequestGet(context) {
         source: "web3_wallet",
         platform: WALLET_KLINE_PLATFORMS[token.chainId] || null,
         fetchedKlines: klineRows.length,
+        persistedKlines: persistedKlines.length,
         storedKlines: storedKlines.length,
         dynamic: Boolean(dynamic),
         signal: metrics?.signal_level || "none",
@@ -138,6 +141,7 @@ export async function onRequestGet(context) {
     offset,
     limit,
     klineLimit,
+    persistKlineLimit,
     activeTotal: activeTokens.length,
     processed: selected.length,
     metricsWritten,
@@ -465,17 +469,17 @@ function computeMetrics(token, rows, dynamic) {
     (ret60 ?? 0) < 8;
 
   const reasons = [];
-  if ((vol60Ratio ?? 0) >= 15) reasons.push("60m放量>=15x");
-  else if ((vol60Ratio ?? 0) >= 8) reasons.push("60m放量>=8x");
-  else if ((vol60Ratio ?? 0) >= 5) reasons.push("60m放量>=5x");
+  if ((vol60Ratio ?? 0) >= 15) reasons.push("钱包60m量比>=15x");
+  else if ((vol60Ratio ?? 0) >= 8) reasons.push("钱包60m量比>=8x");
+  else if ((vol60Ratio ?? 0) >= 5) reasons.push("钱包60m量比>=5x");
   if ((ret30 ?? 0) >= 3) reasons.push("30m转强>=3%");
   else if ((ret30 ?? 0) >= 2) reasons.push("30m转强>=2%");
   else if ((ret30 ?? 0) >= 1) reasons.push("30m转强>=1%");
   if ((ret15 ?? 0) >= 3) reasons.push("15m转强>=3%");
-  if ((vol15Ratio ?? 0) >= 5) reasons.push("15m放量>=5x");
-  if ((vol5Ratio ?? 0) >= 10) reasons.push("5m放量>=10x");
-  if ((quoteVol60 ?? 0) >= 1000) reasons.push("60m额>=1000");
-  if ((trades60 ?? 0) >= 10) reasons.push("60m笔数>=10");
+  if ((vol15Ratio ?? 0) >= 5) reasons.push("钱包15m量比>=5x");
+  if ((vol5Ratio ?? 0) >= 10) reasons.push("钱包5m量比>=10x");
+  if ((quoteVol60 ?? 0) >= 1000) reasons.push("钱包60m额>=1K");
+  if ((trades60 ?? 0) >= 10) reasons.push("钱包60m笔>=10");
   if ((trades15 ?? 0) >= 5) reasons.push("15m交易>=5笔");
   if (isChasing) reasons.push("追高风险");
   if (!WALLET_KLINE_PLATFORMS[token.chainId]) reasons.push("仅钱包动态");

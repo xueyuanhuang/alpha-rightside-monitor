@@ -203,7 +203,7 @@ function renderToken(token) {
   icon.src = iconSource(token);
   symbol.textContent = token.symbol || "-";
   name.textContent = token.name || "";
-  stamp.textContent = token.computedAt ? `计算 ${relativeTime(token.computedAt)}` : "";
+  stamp.textContent = token.computedAt ? `钱包 ${relativeTime(token.computedAt)}` : "";
   pill.textContent = levelLabels[token.signalLevel] || token.signalLevel || "无";
   pill.classList.add(token.signalLevel || "none");
   price.textContent = formatPrice(token.price);

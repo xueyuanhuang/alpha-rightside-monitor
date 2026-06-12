@@ -11,7 +11,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/assets/icon.svg" />
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260612-6" />
+    <link rel="stylesheet" href="/styles.css?v=20260612-7" />
   </head>
   <body>
     <main class="shell">
@@ -75,7 +75,7 @@
             <select id="sortSelect">
               <option value="score">分数</option>
               <option value="level">等级</option>
-              <option value="vol60">60m量</option>
+              <option value="vol60">60m量比</option>
               <option value="ret30">30m涨幅</option>
               <option value="quote">成交额</option>
             </select>
@@ -137,11 +137,11 @@
         <div class="metric-grid">
           <div><span>30m</span><strong data-field="ret30"></strong></div>
           <div><span>60m</span><strong data-field="ret60"></strong></div>
-          <div><span>60m量</span><strong data-field="vol60"></strong></div>
-          <div><span>15m量</span><strong data-field="vol15"></strong></div>
-          <div><span>15m笔数</span><strong data-field="trades15"></strong></div>
-          <div><span>60m额</span><strong data-field="quote60"></strong></div>
-          <div><span>60m笔数</span><strong data-field="trades60"></strong></div>
+          <div><span>60m量比</span><strong data-field="vol60"></strong></div>
+          <div><span>15m量比</span><strong data-field="vol15"></strong></div>
+          <div><span>15m笔比</span><strong data-field="trades15"></strong></div>
+          <div><span>钱包60m额</span><strong data-field="quote60"></strong></div>
+          <div><span>钱包60m笔</span><strong data-field="trades60"></strong></div>
           <div><span>市值</span><strong data-field="mcap"></strong></div>
         </div>
 
@@ -150,6 +150,6 @@
     </template>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/app.js?v=20260612-5" type="module"></script>
+    <script src="/app.js?v=20260612-6" type="module"></script>
   </body>
 </html>
